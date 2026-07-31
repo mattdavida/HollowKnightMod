@@ -10,9 +10,8 @@ namespace HollowKnight.Services
     public class InstaKillService
     {
         private readonly IModLogger logger;
-        private object cheatManagerInstance;
         private Type cheatManagerType;
-        private FieldInfo isInstaKillEnabledField;
+        private PropertyInfo isInstaKillEnabledProperty;
         private Action<string, bool> onConfigSave;
 
         public InstaKillService(IModLogger logger)
@@ -29,18 +28,18 @@ namespace HollowKnight.Services
         }
 
         /// <summary>
-        /// Gets or creates the CheatManager instance.
+        /// Resolves the CheatManager type and the IsInstaKillEnabled static property.
+        /// No instance is required — the property is static.
         /// </summary>
-        private bool EnsureCheatManagerInstance()
+        private bool EnsureCheatManagerType()
         {
-            if (cheatManagerInstance != null && cheatManagerType != null && isInstaKillEnabledField != null)
+            if (cheatManagerType != null && isInstaKillEnabledProperty != null)
             {
                 return true;
             }
 
             try
             {
-                // Get CheatManager type
                 cheatManagerType = Type.GetType("CheatManager, Assembly-CSharp");
                 if (cheatManagerType == null)
                 {
@@ -48,61 +47,23 @@ namespace HollowKnight.Services
                     return false;
                 }
 
-                // Get the instance field (private static)
-                FieldInfo instanceField = cheatManagerType.GetField("instance", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                if (instanceField == null)
+                // IsInstaKillEnabled is a public static property
+                isInstaKillEnabledProperty = cheatManagerType.GetProperty(
+                    "IsInstaKillEnabled",
+                    BindingFlags.Public | BindingFlags.Static);
+
+                if (isInstaKillEnabledProperty == null)
                 {
-                    logger.Log("CheatManager.instance field not found");
+                    logger.Log("CheatManager.IsInstaKillEnabled property not found");
                     return false;
                 }
 
-                cheatManagerInstance = instanceField.GetValue(null);
-
-                // If instance is null, manually call Init() to create it (fallback)
-                // This should rarely happen since we now call Init() early in mod initialization
-                if (cheatManagerInstance == null)
-                {
-                    logger.Log("CheatManager.instance is null - attempting fallback Init() call");
-                    
-                    // Call CheatManager.Init() via reflection
-                    MethodInfo initMethod = cheatManagerType.GetMethod("Init", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                    if (initMethod != null)
-                    {
-                        initMethod.Invoke(null, null);
-                        logger.Log("CheatManager.Init() called (fallback)");
-                        
-                        // Try to get the instance again
-                        cheatManagerInstance = instanceField.GetValue(null);
-                        
-                        if (cheatManagerInstance == null)
-                        {
-                            logger.Log("CheatManager still not available - try toggling Insta Kill after loading into the game");
-                            return false;
-                        }
-                        
-                        logger.Log("CheatManager instance created successfully via fallback!");
-                    }
-                    else
-                    {
-                        logger.Log("CheatManager.Init() method not found");
-                        return false;
-                    }
-                }
-
-                // Get the isInstaKillEnabled field
-                isInstaKillEnabledField = cheatManagerType.GetField("isInstaKillEnabled", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (isInstaKillEnabledField == null)
-                {
-                    logger.Log("isInstaKillEnabled field not found on CheatManager");
-                    return false;
-                }
-
-                logger.Log("Successfully accessed CheatManager instance!");
+                logger.Log("Successfully resolved CheatManager.IsInstaKillEnabled!");
                 return true;
             }
             catch (Exception e)
             {
-                logger.Log($"Error accessing CheatManager: {e.Message}");
+                logger.Log($"Error resolving CheatManager: {e.Message}");
                 logger.Log($"Stack trace: {e.StackTrace}");
                 return false;
             }
@@ -113,18 +74,19 @@ namespace HollowKnight.Services
         /// </summary>
         public bool ToggleInstaKill(Action<string> onSuccess = null, Action<string> onError = null)
         {
-            if (!EnsureCheatManagerInstance())
+            if (!EnsureCheatManagerType())
             {
-                onError?.Invoke("CheatManager not ready yet - try again after loading into the game");
+                onError?.Invoke("CheatManager not available");
                 return false;
             }
 
             try
             {
-                bool currentValue = (bool)isInstaKillEnabledField.GetValue(cheatManagerInstance);
+                // null target because IsInstaKillEnabled is static
+                bool currentValue = (bool)isInstaKillEnabledProperty.GetValue(null);
                 bool newValue = !currentValue;
 
-                isInstaKillEnabledField.SetValue(cheatManagerInstance, newValue);
+                isInstaKillEnabledProperty.SetValue(null, newValue);
 
                 string status = newValue ? "enabled" : "disabled";
                 string success = $"Insta Kill {status}";
@@ -147,14 +109,14 @@ namespace HollowKnight.Services
         /// </summary>
         public bool IsInstaKillEnabled()
         {
-            if (!EnsureCheatManagerInstance())
+            if (!EnsureCheatManagerType())
             {
                 return false;
             }
 
             try
             {
-                return (bool)isInstaKillEnabledField.GetValue(cheatManagerInstance);
+                return (bool)isInstaKillEnabledProperty.GetValue(null);
             }
             catch
             {
@@ -167,7 +129,7 @@ namespace HollowKnight.Services
         /// </summary>
         public bool SetInstaKill(bool value, Action<string> onSuccess = null, Action<string> onError = null)
         {
-            if (!EnsureCheatManagerInstance())
+            if (!EnsureCheatManagerType())
             {
                 onError?.Invoke("CheatManager not available");
                 return false;
@@ -175,8 +137,8 @@ namespace HollowKnight.Services
 
             try
             {
-                isInstaKillEnabledField.SetValue(cheatManagerInstance, value);
-                
+                isInstaKillEnabledProperty.SetValue(null, value);
+
                 string status = value ? "enabled" : "disabled";
                 onSuccess?.Invoke($"Insta Kill set to {status}");
                 return true;
@@ -189,4 +151,3 @@ namespace HollowKnight.Services
         }
     }
 }
-

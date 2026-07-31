@@ -85,6 +85,8 @@ Hollow Knight includes a developer cheat system (`CheatManager`) that is disable
 
 **Open Menu**: Press `Insert` or `~` (Tilde/Backtick)
 
+For **international keyboards** where Insert/Tilde may not work well, you can configure a custom key in the config file.
+
 The menu will appear on the right side of the screen. All features are organized into collapsible sections for easy navigation.
 
 ### Configuration
@@ -92,6 +94,29 @@ The menu will appear on the right side of the screen. All features are organized
 Toggle features automatically save their state when changed and restore on game restart:
 - **BepInEx**: `BepInEx/config/com.hollowknight.cheats.cfg`
 - **MelonLoader**: `UserData/MelonPreferences.cfg`
+
+#### Custom GUI Toggle Key (International Keyboard Support)
+
+Edit your config file and change the `GUI Toggle Key` setting:
+
+**BepInEx** (`BepInEx/config/com.hollowknight.cheats.cfg`):
+```ini
+[Keybinds]
+## Key to open/close the cheat GUI. Insert/Tilde always work. 
+## Examples: F7, Home, G, Minus, None
+## Full list: https://docs.unity3d.com/ScriptReference/KeyCode.html
+GUI Toggle Key = F7
+```
+
+**MelonLoader** (`UserData/MelonPreferences.cfg`):
+```ini
+[HollowKnightKeybinds]
+GuiToggleKey = "F7"
+```
+
+Common alternatives for non-US keyboards: `F7`, `Home`, `End`, `PageUp`, `PageDown`, `Minus`, `Equals`
+
+**Note**: Insert and Tilde always work as fallbacks, even if you set a custom key.
 
 ## Building from Source
 

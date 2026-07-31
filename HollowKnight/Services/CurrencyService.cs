@@ -120,7 +120,6 @@ namespace HollowKnight.Services
                 {
                     setMPChargeMethod.Invoke(heroController, new object[] { maxMP });
                     string success = "Soul refilled!";
-                    logger.Log(success);
                     onSuccess?.Invoke(success);
                     return true;
                 }

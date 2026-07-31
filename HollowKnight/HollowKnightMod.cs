@@ -80,6 +80,15 @@ namespace HollowKnight
         private IInputHandler inputHandler = new UnityInputAdapter();
         private ITimeProvider timeProvider = new UnityTimeAdapter();
 
+        // Configuration for GUI Toggle Keybind
+#if BEPINEX
+        private BepInEx.Configuration.ConfigEntry<string> guiToggleKeyConfig;
+#elif MELONLOADER
+        private MelonPreferences_Category keybindCategory;
+        private MelonPreferences_Entry<KeyCode> guiToggleKeyConfig;
+#endif
+        private KeyCode guiToggleKey = KeyCode.None; // Default to None - users can configure if desired
+
         // Configuration for Toggle Features
 #if BEPINEX
         private BepInEx.Configuration.ConfigEntry<bool> invincibilityConfig;
@@ -100,13 +109,19 @@ namespace HollowKnight
         [System.Obsolete]
         public override void OnApplicationStart()
         {
-            InitializeMod();
+            logger.Log("Hollow Knight Cheats Mod v1.0 - Ready!");
+            logger.Log("Controls: INSERT/TILDE = Toggle GUI (configurable key available in UserData/MelonPreferences.cfg)");
+            
+            logger.Log("Hollow Knight Cheats Mod initialized successfully!");
         }
 
         public override void OnInitializeMelon()
         {
             base.OnInitializeMelon();
             logger.Log("Hollow Knight Cheats Mod Initialized!");
+            
+            // Initialize the mod (same as BepInEx Awake)
+            InitializeMod();
         }
 #elif BEPINEX
         void Awake()
@@ -163,7 +178,7 @@ namespace HollowKnight
             };
             
             logger.Log("Hollow Knight Cheats Mod v1.0 - Ready!");
-            logger.Log("Controls: INSERT/TILDE = Toggle GUI");
+            logger.Log("Controls: INSERT/TILDE = Toggle GUI (configurable key available in config file)");
         }
 
         /// <summary>
@@ -264,8 +279,9 @@ namespace HollowKnight
                 }
             }
             
-            // GUI Toggle (Insert or Tilde key)
-            if (inputHandler.GetKeyDown(KeyCode.Insert) || inputHandler.GetKeyDown(KeyCode.BackQuote))
+            // GUI Toggle (Configurable key + legacy Insert/Tilde for backwards compatibility)
+            if ((guiToggleKey != KeyCode.None && inputHandler.GetKeyDown(guiToggleKey)) || 
+                inputHandler.GetKeyDown(KeyCode.Insert) || inputHandler.GetKeyDown(KeyCode.BackQuote))
             {
                 showGUI = !showGUI;
 
@@ -311,10 +327,10 @@ namespace HollowKnight
                     }
                 }
 
-                logger.Log($"GUI {(showGUI ? "Enabled" : "Disabled")}");
+                string availableKeys = guiToggleKey != KeyCode.None ? $"{guiToggleKey}/Insert/Tilde" : "Insert/Tilde";
+                logger.Log($"GUI {(showGUI ? "Enabled" : "Disabled")} (Available keys: {availableKeys})");
                 toastSystem.ShowToast($"GUI {(showGUI ? "Opened" : "Closed")}");
             }
-
             // Handle auto soul refill timer
             if (autoRefillSoul && heroController != null)
             {
@@ -507,13 +523,32 @@ namespace HollowKnight
         }
 
         /// <summary>
-        /// Initializes configuration for toggle features.
+        /// Initializes configuration for toggle features and keybinds.
         /// Creates config file: BepInEx/config/com.hollowknight.cheats.cfg or UserData/MelonPreferences.cfg
         /// </summary>
         private void InitializeConfiguration()
         {
 #if BEPINEX
             // BepInEx creates: BepInEx/config/com.hollowknight.cheats.cfg
+            
+            // GUI Toggle Keybind
+            guiToggleKeyConfig = Config.Bind("Keybinds", "GUI Toggle Key", "None", 
+                "Key to open/close the cheat GUI. Insert/Tilde always work. Examples: F7, Home, G, Minus, None. Full list: https://docs.unity3d.com/ScriptReference/KeyCode.html");
+            
+            // Parse user-configured value
+            if (System.Enum.TryParse<KeyCode>(guiToggleKeyConfig.Value, true, out KeyCode parsedKey))
+            {
+                guiToggleKey = parsedKey;
+            }
+            else
+            {
+                guiToggleKey = KeyCode.None;
+                logger.Log($"Invalid key '{guiToggleKeyConfig.Value}' in config, using None");
+            }
+            
+            logger.Log($"Configuration loaded - GUI Toggle Key: {guiToggleKey}");
+            
+            // Toggle Features
             invincibilityConfig = Config.Bind("ToggleFeatures", "Invincibility", false, 
                 "Enable Invincibility on startup");
             infiniteAirJumpConfig = Config.Bind("ToggleFeatures", "Infinite Air Jump", false, 
@@ -525,9 +560,23 @@ namespace HollowKnight
             allCharmsCost1Config = Config.Bind("ToggleFeatures", "All Charms Cost 1", false, 
                 "Set all charm costs to 1 notch on startup");
             
-            logger.Log($"Configuration loaded - Invincibility: {invincibilityConfig.Value}, Infinite Air Jump: {infiniteAirJumpConfig.Value}, Auto Soul Refill: {autoSoulRefillConfig.Value}, Insta Kill: {instaKillConfig.Value}, All Charms Cost 1: {allCharmsCost1Config.Value}");
+            logger.Log($"Toggle Features - Invincibility: {invincibilityConfig.Value}, Infinite Air Jump: {infiniteAirJumpConfig.Value}, Auto Soul Refill: {autoSoulRefillConfig.Value}, Insta Kill: {instaKillConfig.Value}, All Charms Cost 1: {allCharmsCost1Config.Value}");
 #elif MELONLOADER
             // MelonLoader creates: UserData/MelonPreferences.cfg
+            
+            // GUI Toggle Keybind
+            keybindCategory = MelonPreferences.CreateCategory("HollowKnightKeybinds", "Hollow Knight Cheat Keybinds");
+            
+            guiToggleKeyConfig = keybindCategory.CreateEntry("GuiToggleKey", KeyCode.None, 
+                "Key to open/close the cheat GUI. Insert/Tilde always work. Examples: F7, Home, G, Minus, None. Full list: https://docs.unity3d.com/ScriptReference/KeyCode.html");
+            
+            // Load user-configured value
+            guiToggleKey = guiToggleKeyConfig.Value;
+            
+            logger.Log($"Preferences loaded - GUI Toggle Key: {guiToggleKey}");
+            logger.Log("For valid key names, see: https://docs.unity3d.com/ScriptReference/KeyCode.html");
+            
+            // Toggle Features
             toggleFeaturesCategory = MelonPreferences.CreateCategory("HollowKnightToggleFeatures", "Hollow Knight Toggle Features");
             
             invincibilityConfig = toggleFeaturesCategory.CreateEntry("Invincibility", false, 
@@ -541,7 +590,7 @@ namespace HollowKnight
             allCharmsCost1Config = toggleFeaturesCategory.CreateEntry("AllCharmsCost1", false, 
                 "Set all charm costs to 1 notch on startup");
             
-            logger.Log($"Preferences loaded - Invincibility: {invincibilityConfig.Value}, Infinite Air Jump: {infiniteAirJumpConfig.Value}, Auto Soul Refill: {autoSoulRefillConfig.Value}, Insta Kill: {instaKillConfig.Value}, All Charms Cost 1: {allCharmsCost1Config.Value}");
+            logger.Log($"Toggle Features - Invincibility: {invincibilityConfig.Value}, Infinite Air Jump: {infiniteAirJumpConfig.Value}, Auto Soul Refill: {autoSoulRefillConfig.Value}, Insta Kill: {instaKillConfig.Value}, All Charms Cost 1: {allCharmsCost1Config.Value}");
 #endif
         }
 

@@ -311,57 +311,50 @@ namespace HollowKnight.Services
         /// <summary>
         /// Returns array of all charm names for the dropdown.
         /// Format: "CharmNumber|Name" to avoid index mapping issues.
-        /// Gets names directly from BuildEquippedCharms.gameObjectList at runtime.
+        /// Gets names from CharmDisplay instances (id field maps directly to charm number).
         /// </summary>
         public string[] GetCharmNames()
         {
             // Hollow Knight has 40 charms including Kingsoul/Void Heart (charm 36)
             var charmNames = new System.Collections.Generic.List<string>();
-            
-            // Try to get charm names from BuildEquippedCharms.gameObjectList
-            var gameObjectNames = GetCharmNamesFromBuildEquippedCharms();
-            
+
+            var nameById = GetCharmNamesByIdFromCharmDisplays();
+
             for (int i = 1; i <= 40; i++)
             {
                 string charmName;
-                
-                // gameObjectList is 0-indexed, charm IDs are 1-indexed
-                // So gameObjectList[0] = Charm 1, gameObjectList[1] = Charm 2, etc.
-                if (gameObjectNames != null && i - 1 < gameObjectNames.Count && gameObjectNames[i - 1] != null)
+
+                if (nameById != null && nameById.TryGetValue(i, out string rawName))
                 {
-                    charmName = CleanCharmName(gameObjectNames[i - 1]);
+                    charmName = CleanCharmName(rawName);
                 }
                 else
                 {
-                    // Simple fallback - CharmDisplay components don't exist until charms menu opens once
                     charmName = $"Charm {i}";
                 }
-                
-                charmNames.Add($"{i}|{charmName}"); // Store number in string to avoid index confusion
+
+                charmNames.Add($"{i}|{charmName}");
             }
-            
+
             return charmNames.ToArray();
         }
 
         /// <summary>
-        /// Gets charm GameObject names from BuildEquippedCharms.gameObjectList (prefab references).
-        /// Uses Resources.FindObjectsOfTypeAll like Unity Explorer to find inactive objects too.
-        /// Returns null if BuildEquippedCharms is not found.
+        /// Finds all CharmDisplay MonoBehaviours and returns a mapping of charm id -> GameObject name.
+        /// CharmDisplay.id is 1-indexed and matches the charm number used everywhere else.
+        /// Uses Resources.FindObjectsOfTypeAll so inactive objects (charms menu not yet opened) are included.
         /// </summary>
-        private System.Collections.Generic.List<string> GetCharmNamesFromBuildEquippedCharms()
+        private System.Collections.Generic.Dictionary<int, string> GetCharmNamesByIdFromCharmDisplays()
         {
             try
             {
-                // Get BuildEquippedCharms type
-                Type buildEquippedCharmsType = Type.GetType("BuildEquippedCharms, Assembly-CSharp");
-                if (buildEquippedCharmsType == null)
+                Type charmDisplayType = Type.GetType("CharmDisplay, Assembly-CSharp");
+                if (charmDisplayType == null)
                 {
-                    logger.Log("BuildEquippedCharms type not found in Assembly-CSharp");
+                    logger.Log("CharmDisplay type not found in Assembly-CSharp");
                     return null;
                 }
 
-                // Use Resources.FindObjectsOfTypeAll to find ALL objects (including inactive)
-                // This is what Unity Explorer uses
                 MethodInfo findAllMethod = typeof(Resources).GetMethod("FindObjectsOfTypeAll", new Type[] { typeof(Type) });
                 if (findAllMethod == null)
                 {
@@ -369,67 +362,46 @@ namespace HollowKnight.Services
                     return null;
                 }
 
-                // Call FindObjectsOfTypeAll(buildEquippedCharmsType)
-                Array allObjects = findAllMethod.Invoke(null, new object[] { buildEquippedCharmsType }) as Array;
-                
+                Array allObjects = findAllMethod.Invoke(null, new object[] { charmDisplayType }) as Array;
+
                 if (allObjects == null || allObjects.Length == 0)
                 {
-                    logger.Log("Resources.FindObjectsOfTypeAll returned no BuildEquippedCharms instances");
+                    logger.Log("No CharmDisplay instances found");
                     return null;
                 }
 
-                logger.Log($"Found {allObjects.Length} BuildEquippedCharms instance(s)");
+                logger.Log($"Found {allObjects.Length} CharmDisplay instance(s)");
 
-                // Get the first instance
-                object buildEquippedCharms = allObjects.GetValue(0);
-
-                // Get the gameObjectList field
-                FieldInfo gameObjectListField = buildEquippedCharmsType.GetField("gameObjectList");
-                
-                if (gameObjectListField == null)
+                FieldInfo idField = charmDisplayType.GetField("id", BindingFlags.Public | BindingFlags.Instance);
+                if (idField == null)
                 {
-                    logger.Log("gameObjectList field not found on BuildEquippedCharms");
+                    logger.Log("CharmDisplay.id field not found");
                     return null;
                 }
 
-                // Get the list (it's a List<GameObject>)
-                var gameObjectList = gameObjectListField.GetValue(buildEquippedCharms) as System.Collections.IList;
-                
-                if (gameObjectList == null)
-                {
-                    logger.Log("gameObjectList is null");
-                    return null;
-                }
+                var nameById = new System.Collections.Generic.Dictionary<int, string>();
 
-                logger.Log($"gameObjectList has {gameObjectList.Count} items");
-
-                // Extract names from the list
-                var names = new System.Collections.Generic.List<string>();
-                
-                for (int i = 0; i < gameObjectList.Count; i++)
+                foreach (object obj in allObjects)
                 {
-                    GameObject go = gameObjectList[i] as GameObject;
-                    if (go != null)
+                    Component comp = obj as Component;
+                    if (comp == null) continue;
+
+                    int id = (int)idField.GetValue(obj);
+                    if (id < 1 || id > 40) continue;
+
+                    // Only record the first occurrence per id (avoids duplicates from scene reloads)
+                    if (!nameById.ContainsKey(id))
                     {
-                        names.Add(go.name);
-                        if (i < 5) // Log first 5 for debugging
-                        {
-                            logger.Log($"  gameObjectList[{i}] = '{go.name}'");
-                        }
-                    }
-                    else
-                    {
-                        logger.Log($"  gameObjectList[{i}] is null!");
-                        names.Add(null);
+                        nameById[id] = comp.gameObject.name;
                     }
                 }
 
-                logger.Log($"Successfully loaded {names.Count} charm names from BuildEquippedCharms.gameObjectList");
-                return names;
+                logger.Log($"Resolved {nameById.Count} charm names from CharmDisplay instances");
+                return nameById;
             }
             catch (Exception e)
             {
-                logger.Log($"Error getting charm names from BuildEquippedCharms: {e.Message}\n{e.StackTrace}");
+                logger.Log($"Error getting charm names from CharmDisplay: {e.Message}\n{e.StackTrace}");
                 return null;
             }
         }
